@@ -1,16 +1,13 @@
 
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 
-const getAIClient = () => {
-  return new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-};
-
 export const restoreImage = async (
   base64Image: string,
   mimeType: string,
-  prompt: string = "Please restore this photo. Remove scratches, enhance details, improve clarity, and colorize if it's black and white. Make it look like a high-quality modern photograph while keeping the original faces and composition intact."
+  prompt: string = "Act as a professional photo restoration expert. Your task is to take this old, damaged photo and return a completely restored, high-quality version. 1. Remove all scratches, dust, and physical artifacts. 2. Sharpen blurry details, especially around faces and eyes. 3. If the image is black and white, colorize it with realistic, historically accurate, and vibrant colors. 4. Balance the exposure and contrast to make it look like a modern digital photograph while preserving the original character. Output ONLY the restored image."
 ): Promise<string> => {
-  const ai = getAIClient();
+  // Use a fresh instance with the current API_KEY from the environment
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   try {
     const response: GenerateContentResponse = await ai.models.generateContent({
@@ -19,7 +16,7 @@ export const restoreImage = async (
         parts: [
           {
             inlineData: {
-              data: base64Image.split(',')[1], // Remove prefix if present
+              data: base64Image.split(',')[1],
               mimeType: mimeType,
             },
           },
@@ -28,9 +25,13 @@ export const restoreImage = async (
           },
         ],
       },
+      config: {
+        imageConfig: {
+          aspectRatio: "1:1"
+        }
+      }
     });
 
-    // Iterate through candidates to find the image part
     if (response.candidates && response.candidates[0].content.parts) {
       for (const part of response.candidates[0].content.parts) {
         if (part.inlineData) {
@@ -39,9 +40,12 @@ export const restoreImage = async (
       }
     }
     
-    throw new Error("No image was returned from the restoration process.");
-  } catch (error) {
+    throw new Error("The AI didn't return an image part. The photo might be too damaged or violate safety guidelines.");
+  } catch (error: any) {
     console.error("Restoration Error:", error);
-    throw error;
+    if (error?.message?.includes("Requested entity was not found")) {
+      throw new Error("Invalid API Key. Please click 'Connect Key' to refresh your credentials.");
+    }
+    throw new Error(error.message || "Something went wrong during restoration. Please try again.");
   }
 };

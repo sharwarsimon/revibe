@@ -1,15 +1,76 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { restoreImage } from '../services/geminiService';
 import ComparisonSlider from './ComparisonSlider';
 import { RestoredPhoto } from '../types';
+
+// Fix: Moving AIStudio definition inside declare global to resolve "Subsequent property declarations" collision
+declare global {
+  interface AIStudio {
+    hasSelectedApiKey: () => Promise<boolean>;
+    openSelectKey: () => Promise<void>;
+  }
+  interface Window {
+    aistudio?: AIStudio;
+  }
+}
 
 const Dashboard: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [restoredPhoto, setRestoredPhoto] = useState<RestoredPhoto | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processStep, setProcessStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [hasKey, setHasKey] = useState<boolean>(false);
+
+  const steps = [
+    "Analyzing image structure...",
+    "Identifying scratches and noise...",
+    "Applying neural colorization...",
+    "Enhancing facial details...",
+    "Finalizing high-res output..."
+  ];
+
+  useEffect(() => {
+    let interval: any;
+    if (isProcessing) {
+      setProcessStep(0);
+      interval = setInterval(() => {
+        setProcessStep(prev => (prev < steps.length - 1 ? prev + 1 : prev));
+      }, 3000);
+    } else {
+      clearInterval(interval);
+    }
+    return () => clearInterval(interval);
+  }, [isProcessing]);
+
+  useEffect(() => {
+    const checkKey = async () => {
+      if (process.env.API_KEY) {
+        setHasKey(true);
+        return;
+      }
+      if (window.aistudio) {
+        const selected = await window.aistudio.hasSelectedApiKey();
+        setHasKey(selected);
+      }
+    };
+    checkKey();
+  }, []);
+
+  const handleConnectKey = async () => {
+    if (window.aistudio) {
+      try {
+        await window.aistudio.openSelectKey();
+        // Rule: Assume key selection was successful after triggering openSelectKey to avoid race conditions
+        setHasKey(true);
+        setError(null);
+      } catch (err) {
+        console.error("Key selection failed", err);
+      }
+    }
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -23,6 +84,10 @@ const Dashboard: React.FC = () => {
   };
 
   const handleRestore = async () => {
+    if (!hasKey && !process.env.API_KEY) {
+      setError("Please connect your Google AI Studio key first.");
+      return;
+    }
     if (!selectedFile || !previewUrl) return;
 
     setIsProcessing(true);
@@ -43,7 +108,10 @@ const Dashboard: React.FC = () => {
             status: 'completed'
           });
         } catch (err: any) {
-          setError(err.message || 'Failed to restore image. Please try again.');
+          setError(err.message || 'Restoration failed. Try another photo or check your connection.');
+          if (err.message?.includes("API Key issue") || err.message?.includes("Invalid API Key")) {
+            setHasKey(false);
+          }
         } finally {
           setIsProcessing(false);
         }
@@ -58,135 +126,180 @@ const Dashboard: React.FC = () => {
   return (
     <div className="min-h-screen pt-24 pb-12 px-4">
       <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-10">
-          <h1 className="text-4xl font-extrabold text-slate-900 mb-4 tracking-tight">
-            Restore Your Memories
+        
+        {!hasKey && !process.env.API_KEY && (
+          <div className="mb-8 p-8 bg-gradient-to-br from-slate-900 to-indigo-950 rounded-3xl shadow-2xl text-white flex flex-col md:flex-row items-center gap-6 border border-white/10">
+            <div className="w-16 h-16 bg-indigo-500/20 rounded-2xl flex items-center justify-center shrink-0 border border-indigo-400/30">
+              <svg className="w-8 h-8 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            <div className="flex-1 text-center md:text-left">
+              <h3 className="text-xl font-bold mb-1">AI Engine Disconnected</h3>
+              <p className="text-slate-400 text-sm">Connect your Google AI Studio key to enable the restoration engine.</p>
+            </div>
+            <button 
+              onClick={handleConnectKey}
+              className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-900/40"
+            >
+              Connect Now
+            </button>
+          </div>
+        )}
+
+        <div className="text-center mb-12">
+          <div className="inline-block px-4 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-black uppercase tracking-widest mb-4">
+            Powered by Gemini 2.5 Flash
+          </div>
+          <h1 className="text-5xl md:text-6xl font-black text-slate-900 mb-6 tracking-tight">
+            Bring History <br/><span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-violet-600">To Life</span>
           </h1>
-          <p className="text-lg text-slate-600 max-w-xl mx-auto">
-            Upload any old, damaged, or black & white photo. Our AI will bring it back to life in seconds.
+          <p className="text-lg text-slate-500 max-w-xl mx-auto leading-relaxed">
+            Professional AI photo restoration. Remove damage, restore clarity, and add color to your most precious memories.
           </p>
         </div>
 
-        <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden">
+        <div className="bg-white rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.05)] border border-slate-100 overflow-hidden transition-all">
           {!previewUrl ? (
             <div className="p-12 text-center">
-              <label className="flex flex-col items-center justify-center w-full h-64 border-2 border-dashed border-slate-300 rounded-2xl cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors group">
+              <label className="flex flex-col items-center justify-center w-full h-80 border-2 border-dashed border-slate-200 rounded-[2rem] cursor-pointer bg-slate-50 hover:bg-indigo-50/30 hover:border-indigo-300 transition-all group">
                 <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                  <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                    <svg className="w-8 h-8 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  <div className="w-20 h-20 bg-white rounded-3xl shadow-sm flex items-center justify-center mb-6 group-hover:scale-110 group-hover:rotate-3 transition-transform">
+                    <svg className="w-8 h-8 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                     </svg>
                   </div>
-                  <p className="mb-2 text-sm text-slate-700 font-semibold">Click to upload or drag and drop</p>
-                  <p className="text-xs text-slate-500">JPG, PNG or WEBP (MAX. 5MB)</p>
+                  <p className="mb-2 text-xl font-bold text-slate-800">Upload your old photo</p>
+                  <p className="text-sm text-slate-400">Click to browse or drag and drop</p>
                 </div>
                 <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
               </label>
             </div>
           ) : (
-            <div className="p-6 md:p-8 space-y-8">
+            <div className="p-6 md:p-10">
               {!restoredPhoto ? (
-                <div className="flex flex-col md:flex-row gap-8 items-center">
-                  <div className="w-full md:w-1/2 aspect-[4/3] rounded-2xl overflow-hidden bg-slate-100 shadow-inner">
+                <div className="flex flex-col lg:flex-row gap-12 items-start">
+                  <div className="w-full lg:w-1/2 rounded-[2rem] overflow-hidden bg-slate-100 border border-slate-200 aspect-[4/3] relative group">
                     <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                    {isProcessing && (
+                      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center text-white p-8">
+                        <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+                        <p className="text-xl font-bold mb-2 animate-pulse">{steps[processStep]}</p>
+                        <p className="text-xs text-white/60">This may take up to 20 seconds</p>
+                      </div>
+                    )}
                   </div>
-                  <div className="w-full md:w-1/2 space-y-6">
-                    <div className="space-y-2">
-                      <h3 className="text-xl font-bold text-slate-900">Restore Configuration</h3>
-                      <p className="text-sm text-slate-500">Choose how you want to enhance your photo.</p>
-                    </div>
+                  
+                  <div className="w-full lg:w-1/2 space-y-8">
                     <div className="space-y-4">
-                      <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200">
-                        <span className="text-sm font-medium text-slate-700">AI Colorization</span>
-                        <div className="w-10 h-6 bg-indigo-600 rounded-full flex items-center justify-end px-1">
-                          <div className="w-4 h-4 bg-white rounded-full shadow-sm"></div>
+                      <h3 className="text-2xl font-black text-slate-900 tracking-tight">Restoration Profile</h3>
+                      <div className="space-y-3">
+                        <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center gap-3">
+                          <div className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center shrink-0">
+                            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </div>
+                          <span className="text-sm font-bold text-emerald-900">Scratch & Noise Removal</span>
                         </div>
-                      </div>
-                      <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200">
-                        <span className="text-sm font-medium text-slate-700">Denoise & Sharpen</span>
-                        <div className="w-10 h-6 bg-indigo-600 rounded-full flex items-center justify-end px-1">
-                          <div className="w-4 h-4 bg-white rounded-full shadow-sm"></div>
+                        <div className="p-4 bg-blue-50 border border-blue-100 rounded-2xl flex items-center gap-3">
+                          <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center shrink-0">
+                            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </div>
+                          <span className="text-sm font-bold text-blue-900">Smart Face Enhancement</span>
+                        </div>
+                        <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-2xl flex items-center gap-3">
+                          <div className="w-6 h-6 bg-indigo-500 rounded-full flex items-center justify-center shrink-0">
+                            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </div>
+                          <span className="text-sm font-bold text-indigo-900">Neural Colorization</span>
                         </div>
                       </div>
                     </div>
-                    
+
                     {error && (
-                      <div className="p-4 bg-red-50 text-red-600 rounded-xl text-sm font-medium border border-red-100">
+                      <div className="p-4 bg-rose-50 border border-rose-100 text-rose-700 rounded-2xl text-sm font-bold animate-shake">
                         {error}
                       </div>
                     )}
 
-                    <div className="flex gap-4">
-                      <button 
-                        onClick={() => setPreviewUrl(null)}
-                        className="flex-1 py-3 px-6 rounded-xl border border-slate-200 font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
-                      >
-                        Reset
-                      </button>
+                    <div className="flex flex-col gap-3 pt-4">
                       <button 
                         onClick={handleRestore}
                         disabled={isProcessing}
-                        className={`flex-[2] py-3 px-6 rounded-xl font-bold text-white shadow-lg shadow-indigo-200 transition-all flex items-center justify-center gap-2 ${
-                          isProcessing ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98]'
+                        className={`w-full py-5 rounded-2xl font-black text-lg text-white shadow-2xl transition-all flex items-center justify-center gap-3 ${
+                          isProcessing ? 'bg-slate-300 cursor-not-allowed shadow-none' : 'bg-indigo-600 hover:bg-indigo-700 hover:-translate-y-1 active:scale-[0.98] shadow-indigo-200'
                         }`}
                       >
-                        {isProcessing ? (
-                          <>
-                            <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Processing...
-                          </>
-                        ) : 'Restore Now'}
+                        {isProcessing ? 'Processing Memory...' : 'Revive Photo Now'}
+                      </button>
+                      <button 
+                        onClick={() => {
+                          setPreviewUrl(null);
+                          setSelectedFile(null);
+                          setError(null);
+                        }}
+                        disabled={isProcessing}
+                        className="w-full py-3 px-6 rounded-2xl font-bold text-slate-400 hover:text-slate-600 transition-colors"
+                      >
+                        Change Photo
                       </button>
                     </div>
                   </div>
                 </div>
               ) : (
-                <div className="space-y-6">
+                <div className="space-y-10 animate-fade-in">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-xl font-bold text-slate-900">Restoration Result</h3>
-                    <div className="flex gap-2">
-                      <button 
-                        onClick={() => {
-                          const link = document.createElement('a');
-                          link.href = restoredPhoto.restoredUrl;
-                          link.download = 'restored-photo.png';
-                          link.click();
-                        }}
-                        className="p-2.5 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors"
-                        title="Download"
-                      >
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0L8 8m4-4v12" />
-                        </svg>
-                      </button>
+                    <div>
+                      <h3 className="text-2xl font-black text-slate-900">Success!</h3>
+                      <p className="text-slate-500 text-sm font-medium">Your photo has been revived with Gemini AI.</p>
+                    </div>
+                    <div className="flex gap-3">
                       <button 
                          onClick={() => {
                             setRestoredPhoto(null);
                             setPreviewUrl(null);
                             setSelectedFile(null);
                          }}
-                         className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-semibold text-sm hover:bg-indigo-700 transition-colors"
+                         className="px-6 py-3 border border-slate-200 bg-white text-slate-600 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-colors"
                       >
-                        New Restoration
+                        New Photo
+                      </button>
+                      <button 
+                        onClick={() => {
+                          const link = document.createElement('a');
+                          link.href = restoredPhoto.restoredUrl;
+                          link.download = 'revived-memory.png';
+                          link.click();
+                        }}
+                        className="px-8 py-3 bg-indigo-600 text-white rounded-2xl font-bold text-sm hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-lg shadow-indigo-100"
+                      >
+                        Download HD
                       </button>
                     </div>
                   </div>
+                  
                   <ComparisonSlider 
                     before={restoredPhoto.originalUrl}
                     after={restoredPhoto.restoredUrl}
                   />
-                  <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl flex items-start gap-3">
-                    <div className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center shrink-0 mt-0.5">
-                      <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                      </svg>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
+                      <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest mb-2">Enhancement</p>
+                      <p className="text-sm text-slate-600 font-medium leading-relaxed">AI reconstructed missing pixel data to bring back textures and clarity lost over time.</p>
                     </div>
-                    <div>
-                      <p className="text-sm font-bold text-emerald-900">Successfully Restored</p>
-                      <p className="text-xs text-emerald-700">We've removed noise, colorized, and sharpened your image using deep learning. Use the slider to compare.</p>
+                    <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
+                      <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest mb-2">Colorization</p>
+                      <p className="text-sm text-slate-600 font-medium leading-relaxed">Neural layers analyzed shadows to determine realistic original skin tones and lighting.</p>
+                    </div>
+                    <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
+                      <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest mb-2">Cleanup</p>
+                      <p className="text-sm text-slate-600 font-medium leading-relaxed">Scratches, dust spots, and film grain were intelligently identified and filled with context.</p>
                     </div>
                   </div>
                 </div>
@@ -195,24 +308,8 @@ const Dashboard: React.FC = () => {
           )}
         </div>
 
-        {/* Informational Cards */}
-        <div className="grid md:grid-cols-3 gap-6 mt-12">
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-            <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center mb-4 font-bold">1</div>
-            <h4 className="font-bold text-slate-900 mb-2">Upload Photo</h4>
-            <p className="text-sm text-slate-500">Drop your old black and white or damaged photos into the dashboard.</p>
-          </div>
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-            <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center mb-4 font-bold">2</div>
-            <h4 className="font-bold text-slate-900 mb-2">AI Processing</h4>
-            <h4 className="sr-only">AI Magic</h4>
-            <p className="text-sm text-slate-500">Our neural networks analyze the structure and add missing pixels and color.</p>
-          </div>
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-            <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-lg flex items-center justify-center mb-4 font-bold">3</div>
-            <h4 className="font-bold text-slate-900 mb-2">Download Memory</h4>
-            <p className="text-sm text-slate-500">Get your crystal clear, high-resolution restored photo instantly.</p>
-          </div>
+        <div className="mt-20 text-center text-slate-400">
+           <p className="text-xs font-medium">Privacy focused: Your images are processed securely and never stored on our servers.</p>
         </div>
       </div>
     </div>

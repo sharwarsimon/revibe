@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 
 interface ComparisonSliderProps {
   before: string;
@@ -21,32 +21,45 @@ const ComparisonSlider: React.FC<ComparisonSliderProps> = ({ before, after }) =>
   return (
     <div 
       ref={containerRef}
-      className="relative w-full aspect-[4/3] rounded-2xl overflow-hidden cursor-ew-resize select-none bg-slate-200"
+      className="relative w-full aspect-[4/3] rounded-3xl overflow-hidden cursor-ew-resize select-none bg-slate-200 border border-slate-200 shadow-xl"
       onMouseMove={handleMove}
       onTouchMove={handleMove}
     >
+      {/* Restored Image (Background) */}
       <img src={after} alt="Restored" className="absolute top-0 left-0 w-full h-full object-cover" />
+      
+      {/* Original Image (Foreground, clipped) */}
       <div 
-        className="absolute top-0 left-0 w-full h-full overflow-hidden"
+        className="absolute top-0 left-0 h-full overflow-hidden border-r-2 border-white shadow-[2px_0_10px_rgba(0,0,0,0.1)] z-10"
         style={{ width: `${position}%` }}
       >
-        <img src={before} alt="Original" className="w-[100vw] max-w-none h-full object-cover" />
+        <img 
+          src={before} 
+          alt="Original" 
+          className="absolute top-0 left-0 w-full h-full object-cover"
+          style={{ width: containerRef.current?.offsetWidth }}
+        />
       </div>
+
+      {/* Slider Control Handle */}
       <div 
-        className="absolute top-0 bottom-0 w-1 bg-white shadow-xl cursor-ew-resize z-10"
+        className="absolute top-0 bottom-0 w-1 bg-white z-20"
         style={{ left: `${position}%` }}
       >
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center">
-          <svg className="w-5 h-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M8 9l-3 3m0 0l3 3m-3-3h14M16 9l3 3m0 0l-3 3" />
-          </svg>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-10 bg-white rounded-full shadow-2xl flex items-center justify-center border-4 border-indigo-600/10">
+          <div className="flex gap-1">
+            <div className="w-1 h-3 bg-indigo-600 rounded-full"></div>
+            <div className="w-1 h-3 bg-indigo-600 rounded-full"></div>
+          </div>
         </div>
       </div>
-      <div className="absolute bottom-4 left-4 px-3 py-1 bg-black/40 backdrop-blur-md rounded-lg text-white text-xs font-bold uppercase tracking-wider">
+
+      {/* Labels */}
+      <div className="absolute bottom-6 left-6 px-4 py-2 bg-black/50 backdrop-blur-md rounded-xl text-white text-[10px] font-black uppercase tracking-[0.2em] z-30">
         Original
       </div>
-      <div className="absolute bottom-4 right-4 px-3 py-1 bg-black/40 backdrop-blur-md rounded-lg text-white text-xs font-bold uppercase tracking-wider">
-        Restored
+      <div className="absolute bottom-6 right-6 px-4 py-2 bg-indigo-600/80 backdrop-blur-md rounded-xl text-white text-[10px] font-black uppercase tracking-[0.2em] z-30">
+        Revived
       </div>
     </div>
   );
